@@ -1,7 +1,4 @@
 <?jelly escape-by-default='true'?>
-<!--
-  This view is used to render the installed plugins page.
--->
 <div>
-  This plugin is a sample to explain how to write a Jenkins plugin.
+Specifies the depth for shallow clone. Workaround untill <a href="https://issues.jenkins-ci.org/browse/JENKINS-24728">JENKINS-24728</a> is fixed.
 </div>
