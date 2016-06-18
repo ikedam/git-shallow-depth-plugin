@@ -1,6 +1,8 @@
 /*
  * The MIT License
  * 
+ * Copyright (c) 2004-2009, Sun Microsystems, Inc., Kohsuke Kawaguchi, Erik Ramfelt,
+ * Yahoo! Inc., Tom Huybrechts, Olivier Lamy
  * Copyright (c) 2016 IKEDA Yasuyuki
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -88,6 +90,9 @@ public class GitShallowDepthJenkinsRule extends JenkinsRule {
         return ret;
     }
     
+    /**
+     * {@inheritDoc}
+     */
     @Override
     public void assertEqualDataBoundBeans(Object lhs, Object rhs) throws Exception {
         super.assertEqualDataBoundBeans(lhs, rhs);

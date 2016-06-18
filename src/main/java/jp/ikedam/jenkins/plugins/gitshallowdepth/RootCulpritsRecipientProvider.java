@@ -1,6 +1,7 @@
 /*
  * The MIT License
  * 
+ * Copyright (c) 2004-2010, Sun Microsystems, Inc., Kohsuke Kawaguchi, Yahoo! Inc., CloudBees, Inc.
  * Copyright (c) 2016 IKEDA Yasuyuki
  * 
  * Permission is hereby granted, free of charge, to any person obtaining a copy
@@ -64,6 +65,11 @@ public class RootCulpritsRecipientProvider extends RecipientProvider {
         }
     }
     
+    /**
+     * @param build
+     * @return
+     * @see AbstractBuild#getCulprits()
+     */
     private Set<User> getCulprits(AbstractBuild<?, ?> build) {
         Set<User> r = new HashSet<User>();
         AbstractBuild<?, ?> p = build.getPreviousCompletedBuild();
