@@ -26,15 +26,24 @@ package jp.ikedam.jenkins.plugins.gitshallowdepth;
 
 import java.io.IOException;
 
+import javax.annotation.Nonnull;
+
 import org.jenkinsci.plugins.gitclient.GitClient;
 import org.kohsuke.stapler.DataBoundConstructor;
+import org.kohsuke.stapler.DataBoundSetter;
+import org.kohsuke.stapler.Stapler;
+import org.kohsuke.stapler.StaplerRequest;
 
 import hudson.Extension;
+import hudson.Plugin;
+import hudson.matrix.MatrixProject;
 import hudson.model.TaskListener;
+import hudson.model.Job;
 import hudson.model.Run;
 import hudson.plugins.git.GitException;
 import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.extensions.GitSCMExtensionDescriptor;
+import jenkins.model.Jenkins;
 import hudson.plugins.git.extensions.GitSCMExtension;
 
 /**
@@ -42,6 +51,7 @@ import hudson.plugins.git.extensions.GitSCMExtension;
  */
 public class ShallowDepthCloneOption extends GitSCMExtension {
     private final Integer depth;
+    private boolean disableForMatrixParent;
     
     public ShallowDepthCloneOption() {
         this(null);
@@ -50,16 +60,29 @@ public class ShallowDepthCloneOption extends GitSCMExtension {
     @DataBoundConstructor
     public ShallowDepthCloneOption(Integer depth) {
         this.depth = depth;
+        this.disableForMatrixParent = false;
     }
     
     public Integer getDepth() {
         return depth;
     }
     
+    @DataBoundSetter
+    public void setDisableForMatrixParent(boolean disableForMatrixParent) {
+        this.disableForMatrixParent = disableForMatrixParent;
+    }
+    
+    public boolean isDisableForMatrixParent() {
+        return disableForMatrixParent;
+    }
+    
     @Override
     public void decorateCloneCommand(GitSCM scm, Run<?, ?> build, GitClient git, TaskListener listener, org.jenkinsci.plugins.gitclient.CloneCommand cmd)
             throws IOException, InterruptedException, GitException
     {
+        if (isDisableForMatrixParent() && isMatrixParent(build.getParent())) {
+            return;
+        }
         listener.getLogger().println("Using shallow clone");
         if (getDepth() != null) {
             listener.getLogger().format("  with depth {0}", getDepth());
@@ -68,11 +91,35 @@ public class ShallowDepthCloneOption extends GitSCMExtension {
         cmd.depth(getDepth());
     }
     
+    private static boolean isMatrixParent(@Nonnull Job<?, ?> job) {
+        Jenkins jenkins = Jenkins.getInstance();
+        if (jenkins == null) {
+            return false;
+        }
+        Plugin p = jenkins.getPlugin("matrix-project");
+        if (p == null || !p.getWrapper().isActive()) {
+            return false;
+        }
+        return (job instanceof MatrixProject);
+    }
+    
     @Extension
     public static class DescriptorImpl extends GitSCMExtensionDescriptor {
         @Override
         public String getDisplayName() {
             return Messages.ShallowDepthCloneOption_DisplayName();
+        }
+        
+        public boolean isMatrixProject() {
+            StaplerRequest req = Stapler.getCurrentRequest();
+            if (req == null) {
+                return false;
+            }
+            Job<?, ?> job = req.findAncestorObject(Job.class);
+            if (job == null) {
+                return false;
+            }
+            return isMatrixParent(job);
         }
     }
 }

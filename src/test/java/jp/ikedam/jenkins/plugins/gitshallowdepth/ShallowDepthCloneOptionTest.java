@@ -25,9 +25,17 @@
 package jp.ikedam.jenkins.plugins.gitshallowdepth;
 
 import static org.junit.Assert.*;
+
+import hudson.matrix.Axis;
+import hudson.matrix.AxisList;
+import hudson.matrix.Combination;
+import hudson.matrix.MatrixBuild;
+import hudson.matrix.MatrixProject;
+import hudson.model.AbstractProject;
 import hudson.model.FreeStyleBuild;
 import hudson.model.StreamBuildListener;
 import hudson.model.TaskListener;
+import hudson.model.TopLevelItem;
 import hudson.model.FreeStyleProject;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
@@ -39,7 +47,6 @@ import hudson.plugins.git.extensions.impl.CloneOption;
 
 import java.util.Arrays;
 import java.util.Collections;
-import java.util.List;
 
 import org.jenkinsci.plugins.gitclient.Git;
 import org.jenkinsci.plugins.gitclient.GitClient;
@@ -47,15 +54,13 @@ import org.junit.ClassRule;
 import org.junit.Rule;
 import org.junit.Test;
 import org.junit.rules.TemporaryFolder;
-import org.jvnet.hudson.test.CaptureEnvironmentBuilder;
-import org.jvnet.hudson.test.JenkinsRule;
 
 /**
  *
  */
 public class ShallowDepthCloneOptionTest {
     @ClassRule
-    public static JenkinsRule j = new JenkinsRule();
+    public static GitShallowDepthJenkinsRule j = new GitShallowDepthJenkinsRule();
     
     @Rule
     public TemporaryFolder tmp = new TemporaryFolder();
@@ -64,12 +69,14 @@ public class ShallowDepthCloneOptionTest {
      * Test whether the passed {@link CloneOption} is preserved
      * after configuration.
      * 
-     * @param clone
+     * @param shallowClone
+     * @param projectClass
      * @throws Exception
      */
-    private void doTestConfigure(ShallowDepthCloneOption shallowClone) throws Exception {
+    @SuppressWarnings("rawtypes") // Somehow specifing generics for AbstractProject causes a compilation error.
+    private <T extends AbstractProject & TopLevelItem> void doTestConfigure(ShallowDepthCloneOption shallowClone, Class<T> projectClass) throws Exception {
         final String url = "https://github.com/jenkinsci/jenkins";
-        FreeStyleProject p = j.createFreeStyleProject();
+        T p = j.jenkins.createProject(projectClass, j.createUniqueProjectName());
         GitSCM scm = new GitSCM(
                 Arrays.asList(new UserRemoteConfig(url, "", "", "")),
                 Arrays.asList(new BranchSpec("*/master")),
@@ -87,18 +94,34 @@ public class ShallowDepthCloneOptionTest {
     @Test
     public void testConfigureWithNoDepth() throws Exception {
         ShallowDepthCloneOption clone = new ShallowDepthCloneOption(null);
-        doTestConfigure(clone);
+        doTestConfigure(clone, FreeStyleProject.class);
     }
     
     @Test
     public void testConfigureWithDepth() throws Exception {
         ShallowDepthCloneOption clone = new ShallowDepthCloneOption(5);
-        doTestConfigure(clone);
+        doTestConfigure(clone, FreeStyleProject.class);
+    }
+    
+    @Test
+    public void testConfigureWithDisableMatrixParent() throws Exception {
+        ShallowDepthCloneOption clone = new ShallowDepthCloneOption(null);
+        clone.setDisableForMatrixParent(true);
+        doTestConfigure(clone, MatrixProject.class);
+    }
+    
+    @Test
+    public void testConfigureWithoutDisableMatrixParent() throws Exception {
+        ShallowDepthCloneOption clone = new ShallowDepthCloneOption(null);
+        clone.setDisableForMatrixParent(false);
+        doTestConfigure(clone, MatrixProject.class);
     }
     
     private TaskListener createListener() throws Exception {
         return StreamBuildListener.fromStderr();
     }
+    
+    private final int COMMITS = 10;
     
     private TestGitRepo createRepo() throws Exception {
         TestGitRepo repo = new TestGitRepo(
@@ -106,7 +129,7 @@ public class ShallowDepthCloneOptionTest {
                 tmp.newFolder(),
                 createListener()
         );
-        for (int i = 1; i <= 10; ++i) {
+        for (int i = 1; i <= COMMITS; ++i) {
             repo.commit(
                     "afile",
                     Integer.toString(i),
@@ -117,8 +140,9 @@ public class ShallowDepthCloneOptionTest {
         return repo;
     }
     
-    private FreeStyleProject createProjectForTest(ShallowDepthCloneOption shallowClone) throws Exception {
-        FreeStyleProject p = j.createFreeStyleProject();
+    @SuppressWarnings("rawtypes") // Somehow specifing generics for AbstractProject causes a compilation error.
+    private <T extends AbstractProject & TopLevelItem> T createProjectForTest(ShallowDepthCloneOption shallowClone, Class<T> projectClass) throws Exception {
+        T p = j.jenkins.createProject(projectClass, j.createUniqueProjectName());
         GitSCM scm = new GitSCM(
                 createRepo().remoteConfigs(),
                 Arrays.asList(new BranchSpec("*/master")),
@@ -136,7 +160,7 @@ public class ShallowDepthCloneOptionTest {
     @Test
     public void testCloneWithoutDepth() throws Exception {
         ShallowDepthCloneOption shallowClone = new ShallowDepthCloneOption(null);
-        FreeStyleProject p = createProjectForTest(shallowClone);
+        FreeStyleProject p = createProjectForTest(shallowClone, FreeStyleProject.class);
         FreeStyleBuild b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
         // jgit fails to handle a repository with only one commit.
         GitClient git = Git.with(createListener(), null)
@@ -149,11 +173,71 @@ public class ShallowDepthCloneOptionTest {
     @Test
     public void testCloneWithDepth() throws Exception {
         ShallowDepthCloneOption shallowClone = new ShallowDepthCloneOption(5);
-        FreeStyleProject p = createProjectForTest(shallowClone);
+        FreeStyleProject p = createProjectForTest(shallowClone, FreeStyleProject.class);
         FreeStyleBuild b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
         GitClient git = Git.with(createListener(), null)
                 .in(b.getWorkspace())
                 .getClient();
         assertEquals(5, git.revList("HEAD").size());
+    }
+    
+    @Test
+    public void testCloneWithDisableMatrixParent() throws Exception {
+        ShallowDepthCloneOption shallowClone = new ShallowDepthCloneOption(null);
+        shallowClone.setDisableForMatrixParent(true);
+        MatrixProject p = createProjectForTest(shallowClone, MatrixProject.class);
+        AxisList axes = new AxisList(
+                new Axis("axis1", "value1")
+        );
+        p.setAxes(axes);
+        MatrixBuild b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        
+        // parent
+        {
+            GitClient git = Git.with(createListener(), null)
+                    .in(b.getWorkspace())
+                    .using("git")
+                    .getClient();
+            assertEquals(COMMITS, git.revList("HEAD").size());
+        }
+        
+        // child
+        {
+            GitClient git = Git.with(createListener(), null)
+                    .in(b.getExactRun(new Combination(axes, "value1")).getWorkspace())
+                    .using("git")
+                    .getClient();
+            assertEquals(1, git.revList("HEAD").size());
+        }
+    }
+    
+    @Test
+    public void testCloneWithoutDisableMatrixParent() throws Exception {
+        ShallowDepthCloneOption shallowClone = new ShallowDepthCloneOption(null);
+        shallowClone.setDisableForMatrixParent(false);
+        MatrixProject p = createProjectForTest(shallowClone, MatrixProject.class);
+        AxisList axes = new AxisList(
+                new Axis("axis1", "value1")
+        );
+        p.setAxes(axes);
+        MatrixBuild b = j.assertBuildStatusSuccess(p.scheduleBuild2(0));
+        
+        // parent
+        {
+            GitClient git = Git.with(createListener(), null)
+                    .in(b.getWorkspace())
+                    .using("git")
+                    .getClient();
+            assertEquals(1, git.revList("HEAD").size());
+        }
+        
+        // child
+        {
+            GitClient git = Git.with(createListener(), null)
+                    .in(b.getExactRun(new Combination(axes, "value1")).getWorkspace())
+                    .using("git")
+                    .getClient();
+            assertEquals(1, git.revList("HEAD").size());
+        }
     }
 }

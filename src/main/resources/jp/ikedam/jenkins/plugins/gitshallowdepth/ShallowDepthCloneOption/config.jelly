@@ -26,4 +26,9 @@ THE SOFTWARE.
   <f:entry title="${%Shallow depth}" field="depth">
     <f:textbox />
   </f:entry>
+  <j:if test="${descriptor.matrixProject}">
+    <f:entry title="${%Disable for Parent Build}" field="disableForMatrixParent">
+      <f:checkbox />
+    </f:entry>
+  </j:if>
 </j:jelly>

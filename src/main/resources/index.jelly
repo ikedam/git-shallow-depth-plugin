@@ -1,4 +1,4 @@
 <?jelly escape-by-default='true'?>
 <div>
-Specifies the depth for shallow clone. Workaround untill <a href="https://issues.jenkins-ci.org/browse/JENKINS-24728">JENKINS-24728</a> is fixed.
+Extended features for git shallow clone
 </div>
