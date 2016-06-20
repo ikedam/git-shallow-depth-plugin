@@ -32,6 +32,7 @@ import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import javax.mail.internet.InternetAddress;
@@ -57,7 +58,11 @@ import hudson.model.Result;
 import hudson.model.StreamBuildListener;
 import hudson.plugins.emailext.ExtendedEmailPublisher;
 import hudson.plugins.emailext.ExtendedEmailPublisherContext;
+import hudson.plugins.emailext.MatrixTriggerMode;
+import hudson.plugins.emailext.plugins.EmailTrigger;
+import hudson.plugins.emailext.plugins.RecipientProvider;
 import hudson.plugins.emailext.plugins.recipients.CulpritsRecipientProvider;
+import hudson.plugins.emailext.plugins.trigger.FailureTrigger;
 import hudson.plugins.git.BranchSpec;
 import hudson.plugins.git.GitSCM;
 import hudson.plugins.git.SubmoduleConfig;
@@ -221,5 +226,41 @@ public class RootCulpritsRecipientProviderTest {
                 bcc
         );
         assertThat(to, hasItem(InternetAddress.parse(repo.janeDoe.getEmailAddress())[0]));
+    }
+    
+    @Test
+    public void testConfiguration() throws Exception {
+        FreeStyleProject p = j.createFreeStyleProject();
+        ExtendedEmailPublisher emailExt = new ExtendedEmailPublisher(
+                "test@example.com",
+                "text/plain",
+                "subject",
+                "body",
+                "",
+                "",
+                0,
+                "",
+                false,
+                Arrays.<EmailTrigger>asList(new FailureTrigger(
+                        Arrays.<RecipientProvider>asList(new RootCulpritsRecipientProvider()),
+                        "",
+                        "",
+                        "",
+                        "",
+                        "",
+                        0,
+                        ""
+                )),
+                null
+        );
+        p.getPublishersList().add(emailExt);
+        j.configRoundtrip(p);
+        
+        // ExtendedEmailPublisher and EmailTrigger doesn't implement
+        // all properties of DataBoundConstructor.
+        j.assertEqualDataBoundBeans(
+                emailExt.getConfiguredTriggers().get(0).getEmail().getRecipientProviders(),
+                p.getPublishersList().get(ExtendedEmailPublisher.class).getConfiguredTriggers().get(0).getEmail().getRecipientProviders()
+        );
     }
 }

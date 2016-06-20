@@ -31,6 +31,8 @@ import java.util.Set;
 
 import javax.mail.internet.InternetAddress;
 
+import org.kohsuke.stapler.DataBoundConstructor;
+
 import hudson.EnvVars;
 import hudson.Extension;
 import hudson.model.AbstractBuild;
@@ -48,7 +50,10 @@ import hudson.scm.ChangeLogSet.Entry;
  *
  */
 public class RootCulpritsRecipientProvider extends RecipientProvider {
-
+    @DataBoundConstructor
+    public RootCulpritsRecipientProvider() {
+    }
+    
     /**
      * {@inheritDoc}
      */
