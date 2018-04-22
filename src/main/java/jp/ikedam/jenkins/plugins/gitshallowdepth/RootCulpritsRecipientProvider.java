@@ -84,7 +84,7 @@ public class RootCulpritsRecipientProvider extends RecipientProvider {
                 r.addAll(getCulprits(p));
             }
         }
-        for (Entry e: p.getChangeSet()) {
+        for (Entry e: build.getChangeSet()) {
             r.add(e.getAuthor());
         }
         

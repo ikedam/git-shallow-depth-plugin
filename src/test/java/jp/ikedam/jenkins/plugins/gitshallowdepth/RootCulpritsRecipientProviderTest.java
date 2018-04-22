@@ -25,6 +25,7 @@
 package jp.ikedam.jenkins.plugins.gitshallowdepth;
 
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.is;
 import static org.hamcrest.Matchers.not;
 import static org.junit.Assert.*;
 
@@ -213,8 +214,7 @@ public class RootCulpritsRecipientProviderTest {
         );
         assertThat(to, not(hasItem(InternetAddress.parse(repo.janeDoe.getEmailAddress())[0])));
         
-        // CulpritsRecipientProvider provided by email-ext fails to extract
-        // janeDoe as upstream/axis1=value1#2 doesn't have changelog.
+        // RootCulpritsRecipientProvider sends also to janeDoe.
         to.clear();
         cc.clear();
         bcc.clear();
@@ -262,5 +262,114 @@ public class RootCulpritsRecipientProviderTest {
                 emailExt.getConfiguredTriggers().get(0).getEmail().getRecipientProviders(),
                 p.getPublishersList().get(ExtendedEmailPublisher.class).getConfiguredTriggers().get(0).getEmail().getRecipientProviders()
         );
+    }
+
+    @Test
+    public void testCulpritsForFirstFail() throws Exception {
+        // Consider a following case:
+        //
+        // upstream is a multi configuration project with a child axis1=value1.
+        // downstream is a freestyle project that use an artifact of 
+        //    upstream/axis1=value1.
+        //
+        // downstream#1 failed with an artifact from upstream/axis1=value1#2
+        //
+        // For the first fail, culprits doesn't work.
+
+        // Create upstream#1.
+        TestGitRepo repo = new TestGitRepo(
+                "repo",
+                tmp.newFolder(),
+                StreamBuildListener.fromStderr()
+        );
+        repo.commit(
+                "afile",
+                "initial file",
+                repo.johnDoe,
+                "Committed file for build#1"
+        );
+
+        MatrixProject upstream = j.createMatrixProject();
+        AxisList axes = new AxisList(new Axis("axis1", "value1"));
+        upstream.setAxes(axes);
+
+        ShallowDepthCloneOption shallow = new ShallowDepthCloneOption();
+        shallow.setDisableForMatrixParent(true);
+        GitSCM scm = new GitSCM(
+                repo.remoteConfigs(),
+                Arrays.asList(new BranchSpec("*/master")),
+                false,  // doGenerateSubmoduleConfigurations
+                Collections.<SubmoduleConfig>emptyList(),
+                null,   // browser
+                null,   // gitTool
+                Arrays.<GitSCMExtension>asList(shallow)
+        );
+        upstream.setScm(scm);
+
+        upstream.getBuildersList().add(new TestBuilder() {
+            @Override
+            public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+                build.getWorkspace().child("artifact.txt").write(
+                        build.getEnvironment(listener).expand("${JOB_URL}${GIT_COMMIT}"),
+                        "UTF-8"
+                );
+                return true;
+            }
+        });
+        upstream.getPublishersList().add(new Fingerprinter("artifact.txt"));
+
+        MatrixBuild upstream1 = j.assertBuildStatusSuccess(upstream.scheduleBuild2(0));
+        // remove workspace of child to clear git log.
+        upstream1.getExactRun(new Combination(axes, "value1")).getWorkspace().deleteRecursive();
+
+        // Create upstream#2
+        repo.commit(
+                "afile",
+                "updated for #2",
+                repo.janeDoe,
+                "Committed file for build#2"
+        );
+        MatrixBuild upstream2 = j.assertBuildStatusSuccess(upstream.scheduleBuild2(0));
+        final String artifact2 = upstream2.getExactRun(new Combination(axes, "value1")).getWorkspace().child("artifact.txt").readToString();
+        //upstream2.getExactRun(new Combination(axes, "value1")).getWorkspace().deleteRecursive();
+
+        // Create downstream#1
+        FreeStyleProject downstream = j.createFreeStyleProject();
+        downstream.getBuildersList().add(new TestBuilder() {
+            @Override
+            public boolean perform(AbstractBuild<?, ?> build, Launcher launcher, BuildListener listener) throws InterruptedException, IOException {
+                build.getWorkspace().child("artifact.txt").write(
+                        artifact2,
+                        "UTF-8"
+                );
+                return false;   // failure!
+            }
+        });
+        downstream.getPublishersList().add(new Fingerprinter("artifact.txt"));
+        FreeStyleBuild downstream1 = j.assertBuildStatus(Result.FAILURE, downstream.scheduleBuild2(0).get());
+
+        // Now try to extract targets to send a failure mail.
+        ExtendedEmailPublisherContext context = new ExtendedEmailPublisherContext(
+                new ExtendedEmailPublisher(),
+                downstream1,
+                StreamBuildListener.fromStderr()
+        );
+        Set<InternetAddress> to = new HashSet<InternetAddress>();
+        Set<InternetAddress> cc = new HashSet<InternetAddress>();
+        Set<InternetAddress> bcc = new HashSet<InternetAddress>();
+
+        // RootCulpritsRecipientProvider doesn't work when no previous fail.
+        to.clear();
+        cc.clear();
+        bcc.clear();
+        new RootCulpritsRecipientProvider().addRecipients(
+                context,
+                downstream1.getEnvironment(StreamBuildListener.fromStderr()),
+                to,
+                cc,
+                bcc
+        );
+        assertEquals(to, Collections.<InternetAddress>emptySet());
+        assertThat(to, is(Collections.<InternetAddress>emptySet()));
     }
 }
